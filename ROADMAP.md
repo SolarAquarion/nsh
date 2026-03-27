@@ -262,7 +262,7 @@ Features that don't break POSIX compatibility will be upstreamed to nuta/nsh:
 
 ## Milestones
 
-- [ ] **v0.5.0** — Enhanced history, better prompt
+- [x] **v0.5.0** — Enhanced history (git branch, exit status, duration) ✅ DONE
 - [ ] **v0.6.0** — Native completion engine
 - [ ] **v0.7.0** — AI integration
 - [ ] **v0.8.0** — Structured data (opt-in)
