@@ -1,4 +1,8 @@
-//! History management with enhanced context tracking.
+//! History file I/O and basic entry storage.
+//!
+//! This module handles reading/writing history from disk and provides
+//! basic access (nth, len, append). For searching and filtering,
+//! use `crate::history_search::HistorySearch`.
 use crate::fuzzy::FuzzyVec;
 use crate::theme::ThemeColor;
 use std::collections::HashMap;
@@ -23,19 +27,13 @@ pub struct HistoryEntry {
     pub command: String,
 }
 
-/// Command history with enhanced context tracking.
+/// Command history — file I/O and ordered entry storage.
 pub struct History {
     path: PathBuf,
     /// Ordered list of history entries.
     entries: Vec<HistoryEntry>,
-    /// Fuzzy search index over commands.
+    /// Fuzzy search index over commands (kept here for mainloop completion UI).
     command_index: FuzzyVec,
-    /// Index from command to entry indices (for fast lookup).
-    cmd_to_entries: HashMap<String, Vec<usize>>,
-    /// Index from cwd to entry indices.
-    cwd_to_entries: HashMap<PathBuf, Vec<usize>>,
-    /// Index from git branch to entry indices.
-    branch_to_entries: HashMap<String, Vec<usize>>,
     /// Compatibility: old format used cmd -> cwd mapping.
     path2cwd: HashMap<String, PathBuf>,
 }
@@ -44,16 +42,13 @@ impl History {
     pub fn new(history_file: &Path) -> History {
         let mut entries = Vec::new();
         let mut command_index = FuzzyVec::new();
-        let mut cmd_to_entries: HashMap<String, Vec<usize>> = HashMap::new();
-        let mut cwd_to_entries: HashMap<PathBuf, Vec<usize>> = HashMap::new();
-        let mut branch_to_entries: HashMap<String, Vec<usize>> = HashMap::new();
         let mut path2cwd: HashMap<String, PathBuf> = HashMap::new();
-        
+
         if let Ok(file) = File::open(history_file) {
             for (i, line) in BufReader::new(file).lines().enumerate() {
                 if let Ok(line) = line {
                     let parts: Vec<&str> = line.split('\t').collect();
-                    
+
                     let entry = if parts.len() >= 6 {
                         // New format: timestamp\tcwd\tbranch\texit_status\tduration_ms\tcommand
                         HistoryEntry {
@@ -83,30 +78,10 @@ impl History {
                         trace!("nsh: warning: failed to parse history at line {}", i + 1);
                         continue;
                     };
-                    
-                    let idx = entries.len();
-                    entries.push(entry.clone());
+
                     command_index.append(entry.command.clone());
-                    
-                    cmd_to_entries
-                        .entry(entry.command.clone())
-                        .or_default()
-                        .push(idx);
-                    
-                    cwd_to_entries
-                        .entry(entry.cwd.clone())
-                        .or_default()
-                        .push(idx);
-                    
-                    if let Some(ref branch) = entry.git_branch {
-                        branch_to_entries
-                            .entry(branch.clone())
-                            .or_default()
-                            .push(idx);
-                    }
-                    
-                    // Compatibility with old API
                     path2cwd.insert(entry.command.clone(), entry.cwd.clone());
+                    entries.push(entry);
                 }
             }
         }
@@ -115,9 +90,6 @@ impl History {
             path: history_file.to_owned(),
             entries,
             command_index,
-            cmd_to_entries,
-            cwd_to_entries,
-            branch_to_entries,
             path2cwd,
         }
     }
@@ -128,6 +100,11 @@ impl History {
 
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// Iterate all entries.
+    pub fn entries(&self) -> &[HistoryEntry] {
+        &self.entries
     }
 
     /// Get the nth most recent entry (0 = most recent).
@@ -148,7 +125,8 @@ impl History {
         self.entries.get(idx)
     }
 
-    /// Search history by command (fuzzy).
+    /// Fuzzy search index (for mainloop completion UI, cwd filter).
+    /// Prefer `HistorySearch` for rich filtering.
     pub fn search(&self, query: &str, filter_by_cwd: bool) -> Vec<(Option<ThemeColor>, &str)> {
         if filter_by_cwd {
             let cwd = std::env::current_dir().unwrap();
@@ -157,10 +135,6 @@ impl History {
                 .iter()
                 .filter(|(_, cmd)| match self.path2cwd.get(*cmd) {
                     Some(path) if *path == cwd => true,
-                    Some(path) => {
-                        info!("path='{}' {}", path.display(), cwd.display());
-                        false
-                    }
                     _ => false,
                 })
                 .cloned()
@@ -168,86 +142,6 @@ impl History {
         } else {
             self.command_index.search(query)
         }
-    }
-
-    /// Search history by git branch.
-    pub fn search_by_branch(&self, branch: &str) -> Vec<&HistoryEntry> {
-        self.branch_to_entries
-            .get(branch)
-            .map(|indices| {
-                indices
-                    .iter()
-                    .filter_map(|&idx| self.entries.get(idx))
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    /// Search for failed commands (non-zero exit status).
-    pub fn search_failed(&self) -> Vec<&HistoryEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.exit_status != 0)
-            .collect()
-    }
-
-    /// Search for slow commands (duration >= threshold_ms).
-    pub fn search_slow(&self, threshold_ms: u64) -> Vec<&HistoryEntry> {
-        self.entries
-            .iter()
-            .filter(|e| e.duration_ms >= threshold_ms)
-            .collect()
-    }
-
-    /// Search history with multiple filters.
-    pub fn search_advanced(
-        &self,
-        query: &str,
-        filter: HistoryFilter,
-    ) -> Vec<(Option<ThemeColor>, &str)> {
-        let cwd = std::env::current_dir().ok();
-        
-        self.command_index
-            .search(query)
-            .iter()
-            .filter(|(_, cmd)| {
-                // Get the most recent entry for this command
-                if let Some(indices) = self.cmd_to_entries.get(*cmd) {
-                    if let Some(&idx) = indices.last() {
-                        if let Some(entry) = self.entries.get(idx) {
-                            // Apply filters
-                            if filter.cwd_only {
-                                if let Some(ref cwd) = cwd {
-                                    if entry.cwd != *cwd {
-                                        return false;
-                                    }
-                                }
-                            }
-                            
-                            if let Some(branch) = &filter.branch {
-                                if entry.git_branch.as_ref() != Some(branch) {
-                                    return false;
-                                }
-                            }
-                            
-                            if filter.failed_only && entry.exit_status == 0 {
-                                return false;
-                            }
-                            
-                            if let Some(min_duration) = filter.min_duration_ms {
-                                if entry.duration_ms < min_duration {
-                                    return false;
-                                }
-                            }
-                            
-                            return true;
-                        }
-                    }
-                }
-                false
-            })
-            .cloned()
-            .collect()
     }
 
     /// Append a command to history with full context.
@@ -265,7 +159,7 @@ impl History {
 
         let cwd = std::env::current_dir().unwrap();
         let git_branch = get_git_branch();
-        
+
         let entry = HistoryEntry {
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -294,29 +188,9 @@ impl History {
         }
 
         // Update indices
-        let idx = self.entries.len();
-        self.entries.push(entry.clone());
         self.command_index.append(cmd.to_string());
-        
-        self.cmd_to_entries
-            .entry(cmd.to_string())
-            .or_default()
-            .push(idx);
-        
-        self.cwd_to_entries
-            .entry(cwd.clone())
-            .or_default()
-            .push(idx);
-        
-        if let Some(branch) = git_branch {
-            self.branch_to_entries
-                .entry(branch)
-                .or_default()
-                .push(idx);
-        }
-        
-        // Compatibility with old API
         self.path2cwd.insert(cmd.to_string(), cwd);
+        self.entries.push(entry);
     }
 
     /// Legacy append for backward compatibility.
@@ -325,21 +199,8 @@ impl History {
     }
 }
 
-/// Filter options for advanced history search.
-#[derive(Debug, Clone, Default)]
-pub struct HistoryFilter {
-    /// Only show commands from current directory.
-    pub cwd_only: bool,
-    /// Filter by git branch.
-    pub branch: Option<String>,
-    /// Only show failed commands.
-    pub failed_only: bool,
-    /// Minimum duration in milliseconds.
-    pub min_duration_ms: Option<u64>,
-}
-
 /// Get the current git branch, if in a git repo.
-fn get_git_branch() -> Option<String> {
+pub(crate) fn get_git_branch() -> Option<String> {
     let output = std::process::Command::new("git")
         .arg("rev-parse")
         .arg("--abbrev-ref")
@@ -348,7 +209,7 @@ fn get_git_branch() -> Option<String> {
         .stderr(std::process::Stdio::null())
         .output()
         .ok()?;
-    
+
     if output.status.success() {
         let branch = String::from_utf8_lossy(&output.stdout);
         let branch = branch.trim().to_string();

@@ -32,6 +32,7 @@ mod expand;
 mod fuzzy;
 mod highlight;
 mod history;
+mod history_search;
 mod mainloop;
 mod parser;
 mod path;
