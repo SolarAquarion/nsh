@@ -1,9 +1,8 @@
-//! History search and filtering.
+//! History search and filtering via SQL queries.
 //!
 //! Provides rich querying over history entries: by branch, exit status,
-//! duration, and combined filters. Depends on `crate::history::History`/`HistoryEntry`.
-use crate::history::History;
-use crate::history::HistoryEntry;
+//! duration, and combined filters. Uses the SQLite backend directly.
+use crate::history::{History, HistoryEntry};
 use crate::theme::ThemeColor;
 
 /// Filter options for history queries.
@@ -19,9 +18,9 @@ pub struct HistoryFilter {
     pub min_duration_ms: Option<u64>,
 }
 
-/// Search and filter history entries.
+/// Search and filter history entries via SQL.
 ///
-/// Takes a `&History` reference and applies various filters.
+/// Takes a `&History` reference and builds SQL queries for fast lookup.
 pub struct HistorySearch<'a> {
     history: &'a History,
 }
@@ -31,36 +30,36 @@ impl<'a> HistorySearch<'a> {
         HistorySearch { history }
     }
 
-    /// Search history by command (fuzzy), with optional cwd filter.
+    /// Fuzzy search (delegates to FuzzyVec index for compatibility).
     pub fn search(&self, query: &str, filter_by_cwd: bool) -> Vec<(Option<ThemeColor>, &'a str)> {
         self.history.search(query, filter_by_cwd)
     }
 
     /// All entries that ran in a specific git branch.
-    pub fn by_branch(&self, branch: &str) -> Vec<&'a HistoryEntry> {
-        self.history
-            .entries()
-            .iter()
-            .filter(|e| e.git_branch.as_deref() == Some(branch))
-            .collect()
+    pub fn by_branch(&self, branch: &str) -> Vec<HistoryEntry> {
+        self.history.query_entries(
+            "SELECT id, timestamp, cwd, git_branch, exit_status, duration_ms, command
+             FROM history WHERE git_branch = ?1 ORDER BY id DESC",
+            &[&branch],
+        )
     }
 
     /// All entries with non-zero exit status.
-    pub fn failed(&self) -> Vec<&'a HistoryEntry> {
-        self.history
-            .entries()
-            .iter()
-            .filter(|e| e.exit_status != 0)
-            .collect()
+    pub fn failed(&self) -> Vec<HistoryEntry> {
+        self.history.query_entries(
+            "SELECT id, timestamp, cwd, git_branch, exit_status, duration_ms, command
+             FROM history WHERE exit_status != 0 ORDER BY id DESC",
+            &[],
+        )
     }
 
     /// All entries with duration >= threshold.
-    pub fn slow(&self, threshold_ms: u64) -> Vec<&'a HistoryEntry> {
-        self.history
-            .entries()
-            .iter()
-            .filter(|e| e.duration_ms >= threshold_ms)
-            .collect()
+    pub fn slow(&self, threshold_ms: u64) -> Vec<HistoryEntry> {
+        self.history.query_entries(
+            "SELECT id, timestamp, cwd, git_branch, exit_status, duration_ms, command
+             FROM history WHERE duration_ms >= ?1 ORDER BY duration_ms DESC",
+            &[&(threshold_ms as i64)],
+        )
     }
 
     /// Entries matching multiple filters simultaneously.
@@ -68,47 +67,44 @@ impl<'a> HistorySearch<'a> {
         &self,
         query: &str,
         filter: &HistoryFilter,
-    ) -> Vec<(Option<ThemeColor>, &'a str)> {
-        let cwd = std::env::current_dir().ok();
+    ) -> Vec<(Option<ThemeColor>, String)> {
+        let mut sql = String::from(
+            "SELECT DISTINCT command FROM history WHERE 1=1"
+        );
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
-        self.history
-            .search(query, false)
-            .into_iter()
-            .filter(|(_, cmd)| {
-                self.history
-                    .entries()
-                    .iter()
-                    .rev() // most recent first
-                    .find(|e| e.command == *cmd)
-                    .map(|entry| {
-                        if filter.cwd_only {
-                            if let Some(ref cwd) = cwd {
-                                if entry.cwd != *cwd {
-                                    return false;
-                                }
-                            }
-                        }
+        // Fuzzy match on command text
+        if !query.is_empty() {
+            sql.push_str(" AND command LIKE ?");
+            params.push(Box::new(format!("%{}%", query)));
+        }
 
-                        if let Some(ref branch) = filter.branch {
-                            if entry.git_branch.as_ref() != Some(branch) {
-                                return false;
-                            }
-                        }
+        if filter.cwd_only {
+            if let Ok(cwd) = std::env::current_dir() {
+                sql.push_str(" AND cwd = ?");
+                params.push(Box::new(cwd.to_str().unwrap_or("").to_string()));
+            }
+        }
 
-                        if filter.failed_only && entry.exit_status == 0 {
-                            return false;
-                        }
+        if let Some(ref branch) = filter.branch {
+            sql.push_str(" AND git_branch = ?");
+            params.push(Box::new(branch.clone()));
+        }
 
-                        if let Some(min_duration) = filter.min_duration_ms {
-                            if entry.duration_ms < min_duration {
-                                return false;
-                            }
-                        }
+        if filter.failed_only {
+            sql.push_str(" AND exit_status != 0");
+        }
 
-                        true
-                    })
-                    .unwrap_or(false)
-            })
-            .collect()
+        if let Some(min_duration) = filter.min_duration_ms {
+            sql.push_str(" AND duration_ms >= ?");
+            params.push(Box::new(min_duration as i64));
+        }
+
+        sql.push_str(" ORDER BY id DESC LIMIT 100");
+
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params.iter().map(|p| p.as_ref()).collect();
+
+        self.history.query_strings(&sql, &param_refs)
     }
 }

@@ -42,6 +42,7 @@ backtrace = "0"
 crossterm = "^0.18"
 signal-hook = "0.2"
 phf = { version = "0", features = ["macros"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [dev-dependencies]
 pretty_assertions = "0"
