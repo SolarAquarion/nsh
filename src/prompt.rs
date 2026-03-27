@@ -3,6 +3,26 @@ use pest::iterators::{Pair, Pairs};
 use pest::Parser;
 use std::path::Path;
 
+/// Context needed for rendering dynamic prompt elements.
+pub struct PromptContext {
+    /// Exit status of the last command.
+    pub last_status: i32,
+    /// Duration of the last command in milliseconds.
+    pub last_duration_ms: u64,
+    /// Environment variables (subset needed for prompt).
+    pub env: std::collections::HashMap<String, String>,
+}
+
+impl Default for PromptContext {
+    fn default() -> Self {
+        Self {
+            last_status: 0,
+            last_duration_ms: 0,
+            env: std::env::vars().collect(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prompt {
     spans: Vec<Span>,
@@ -41,6 +61,15 @@ pub enum Span {
         then_part: Vec<Span>,
         else_part: Vec<Span>,
     },
+    // New spans
+    LastStatus,
+    LastDuration,
+    Time,
+    Date,
+    GitBranch,
+    GitStatus,
+    Load,
+    EnvVar(String),
 }
 
 #[derive(Parser)]
@@ -66,6 +95,22 @@ fn visit_prompt(pair: Pair<Rule>) -> Prompt {
             Rule::cyan_span => Span::Color(Color::Cyan),
             Rule::magenta_span => Span::Color(Color::Magenta),
             Rule::literal_span => Span::Literal(pair.as_span().as_str().to_owned()),
+            // New spans
+            Rule::last_status_span => Span::LastStatus,
+            Rule::last_duration_span => Span::LastDuration,
+            Rule::time_span => Span::Time,
+            Rule::date_span => Span::Date,
+            Rule::git_branch_span => Span::GitBranch,
+            Rule::git_status_span => Span::GitStatus,
+            Rule::load_span => Span::Load,
+            Rule::env_var_span => {
+                // Extract variable name from the span
+                let var_name = pair.as_str()
+                    .trim_start_matches("\\{env:")
+                    .trim_end_matches('}')
+                    .to_string();
+                Span::EnvVar(var_name)
+            }
             Rule::if_span => {
                 let mut inner = pair.into_inner();
                 let condition = match inner.next().unwrap().as_span().as_str() {
@@ -136,7 +181,6 @@ fn get_hostname() -> String {
 fn get_repo_branch(git_dir: &str) -> String {
     let rebase_i_file = Path::new(git_dir).join("rebase-merge/head-name");
     if rebase_i_file.exists() {
-        // TODO: remove `refs/<type>/` prefixes.
         return std::fs::read_to_string(rebase_i_file)
             .unwrap()
             .trim()
@@ -221,6 +265,16 @@ fn get_repo_info() -> String {
     columns.join("|")
 }
 
+/// Get just the git branch name.
+fn get_git_branch_only() -> String {
+    get_repo_branch(&get_git_dir())
+}
+
+/// Get git status indicator (* if modified, empty otherwise).
+fn get_git_status_indicator() -> String {
+    if is_repo_modified() { "*".to_string() } else { "".to_string() }
+}
+
 lazy_static! {
     // Use lazy_static to cache the result.
     static ref IN_REMOTE: bool = {
@@ -231,7 +285,6 @@ lazy_static! {
 fn evaluate_condition(cond: &Condition) -> bool {
     match cond {
         Condition::InRepo => {
-            // TODO: Support other systems like SVN.
             std::process::Command::new("git")
                 .arg("rev-parse")
                 .arg("--is-inside-work-tree")
@@ -245,8 +298,110 @@ fn evaluate_condition(cond: &Condition) -> bool {
     }
 }
 
+/// Format duration in human-readable form.
+fn format_duration(ms: u64) -> String {
+    if ms < 1000 {
+        format!("{}ms", ms)
+    } else if ms < 60000 {
+        format!("{:.1}s", ms as f64 / 1000.0)
+    } else {
+        let mins = ms / 60000;
+        let secs = (ms % 60000) / 1000;
+        format!("{}m{}s", mins, secs)
+    }
+}
+
+/// Get current time as HH:MM:SS.
+fn get_current_time() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let hours = (now / 3600) % 24;
+    let mins = (now / 60) % 60;
+    let secs = now % 60;
+    format!("{:02}:{:02}:{:02}", hours, mins, secs)
+}
+
+/// Get current date as YYYY-MM-DD.
+fn get_current_date() -> String {
+    // Use chrono-like formatting with std
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    // Simple date calculation (approximate, doesn't handle leap seconds)
+    let days = now / 86400;
+    // Unix epoch was 1970-01-01
+    let mut year = 1970;
+    let mut remaining_days = days;
+    
+    loop {
+        let days_in_year = if (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0) {
+            366
+        } else {
+            365
+        };
+        
+        if remaining_days < days_in_year {
+            break;
+        }
+        remaining_days -= days_in_year;
+        year += 1;
+    }
+    
+    let days_in_months = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    
+    let mut month = 1;
+    for &days_in_month in &days_in_months {
+        let dim = if month == 2 && is_leap { 29 } else { days_in_month };
+        if remaining_days < dim {
+            break;
+        }
+        remaining_days -= dim;
+        month += 1;
+    }
+    
+    let day = remaining_days + 1;
+    
+    format!("{:04}-{:02}-{:02}", year, month, day)
+}
+
+/// Get system load average.
+fn get_load_average() -> String {
+    // Linux: read from /proc/loadavg
+    if let Ok(contents) = std::fs::read_to_string("/proc/loadavg") {
+        if let Some(load1) = contents.split_whitespace().next() {
+            return load1.to_string();
+        }
+    }
+    
+    // macOS: use sysctl
+    let output = std::process::Command::new("sysctl")
+        .arg("-n")
+        .arg("vm.loadavg")
+        .output();
+    
+    if let Ok(output) = output {
+        let s = String::from_utf8_lossy(&output.stdout);
+        // Output format: "{ 0.12 0.15 0.10 }"
+        if let Some(load) = s.split_whitespace().nth(1) {
+            return load.to_string();
+        }
+    }
+    
+    "".to_string()
+}
+
 /// Returns the length of the last line excluding escape sequences.
 pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
+    draw_prompt_with_context(prompt, &PromptContext::default())
+}
+
+/// Draw prompt with context for dynamic elements.
+pub fn draw_prompt_with_context(prompt: &Prompt, ctx: &PromptContext) -> (String, usize) {
     let mut len = 0;
     let mut buf = String::new();
     for span in &prompt.spans {
@@ -284,7 +439,6 @@ pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                 if let Ok(current_dir) = std::env::current_dir() {
                     let mut path = current_dir.to_str().unwrap().to_string();
 
-                    // "/Users/chandler/games/doom" -> "~/venus/games/doom"
                     if let Some(home_dir) = dirs::home_dir() {
                         let home_dir = home_dir.to_str().unwrap();
                         if path.starts_with(&home_dir) {
@@ -297,9 +451,9 @@ pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                 }
             }
             Span::RepoStatus => {
-                let hostname = get_repo_info();
-                len += hostname.len();
-                buf.push_str(&hostname)
+                let info = get_repo_info();
+                len += info.len();
+                buf.push_str(&info)
             }
             Span::If {
                 condition,
@@ -312,11 +466,60 @@ pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                     else_part
                 };
 
-                let (result, result_len) = draw_prompt(&Prompt {
-                    spans: spans.to_vec(),
-                });
+                let (result, result_len) = draw_prompt_with_context(
+                    &Prompt { spans: spans.to_vec() },
+                    ctx,
+                );
                 len += result_len;
                 buf.push_str(&result)
+            }
+            // New spans
+            Span::LastStatus => {
+                let status = if ctx.last_status == 0 {
+                    format!("{}", ctx.last_status)
+                } else {
+                    // Red for non-zero exit
+                    format!("\x1b[31m{}\x1b[0m", ctx.last_status)
+                };
+                len += ctx.last_status.to_string().len();
+                buf.push_str(&status);
+            }
+            Span::LastDuration => {
+                let dur = format_duration(ctx.last_duration_ms);
+                len += dur.len();
+                buf.push_str(&dur);
+            }
+            Span::Time => {
+                let time = get_current_time();
+                len += time.len();
+                buf.push_str(&time);
+            }
+            Span::Date => {
+                let date = get_current_date();
+                len += date.len();
+                buf.push_str(&date);
+            }
+            Span::GitBranch => {
+                let branch = get_git_branch_only();
+                len += branch.len();
+                buf.push_str(&branch);
+            }
+            Span::GitStatus => {
+                let status = get_git_status_indicator();
+                len += status.len();
+                buf.push_str(&status);
+            }
+            Span::Load => {
+                let load = get_load_average();
+                len += load.len();
+                buf.push_str(&load);
+            }
+            Span::EnvVar(name) => {
+                let value = ctx.env.get(name)
+                    .cloned()
+                    .unwrap_or_else(|| std::env::var(&name).unwrap_or_default());
+                len += value.len();
+                buf.push_str(&value);
             }
         }
     }
@@ -357,6 +560,29 @@ fn test_prompt_parser() {
                     else_part: vec![]
                 },
                 Span::Literal(" $ ".into()),
+            ]
+        })
+    );
+    
+    // Test new spans
+    assert_eq!(
+        parse_prompt("\\{git_branch}\\{git_status} $ "),
+        Ok(Prompt {
+            spans: vec![
+                Span::GitBranch,
+                Span::GitStatus,
+                Span::Literal(" $ ".into()),
+            ]
+        })
+    );
+    
+    assert_eq!(
+        parse_prompt("[\\{last_status}] "),
+        Ok(Prompt {
+            spans: vec![
+                Span::Literal("[".into()),
+                Span::LastStatus,
+                Span::Literal("] ".into()),
             ]
         })
     );

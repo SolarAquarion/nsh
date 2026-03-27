@@ -5,7 +5,7 @@ use crate::fuzzy::FuzzyVec;
 use crate::highlight;
 use crate::history::HistorySelector;
 use crate::process::{check_background_jobs, ExitStatus};
-use crate::prompt::{draw_prompt, parse_prompt};
+use crate::prompt::{draw_prompt_with_context, parse_prompt, PromptContext};
 use crate::shell::Shell;
 use crate::theme::ThemeColor;
 use crossterm::cursor::{self, MoveTo};
@@ -73,6 +73,10 @@ pub struct Mainloop {
     notification: Option<String>,
     dircolor: DirColor,
     input_stack: Vec<String>,
+    /// Exit status of last command.
+    last_status: i32,
+    /// Duration of last command in milliseconds.
+    last_duration_ms: u64,
 }
 
 impl Drop for Mainloop {
@@ -111,6 +115,8 @@ impl Mainloop {
             notification: None,
             dircolor: DirColor::new(),
             input_stack: Vec::new(),
+            last_status: 0,
+            last_duration_ms: 0,
         }
     }
 
@@ -459,7 +465,14 @@ impl Mainloop {
             .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
 
         match parse_prompt(prompt_fmt) {
-            Ok(fmt) => draw_prompt(&fmt),
+            Ok(fmt) => {
+                let ctx = PromptContext {
+                    last_status: self.last_status,
+                    last_duration_ms: self.last_duration_ms,
+                    env: std::env::vars().collect(),
+                };
+                draw_prompt_with_context(&fmt, &ctx)
+            }
             Err(err) => {
                 print_err!("failed to parse $PROMPT: {}", err);
                 ("$ ".to_owned(), 2)
@@ -773,6 +786,10 @@ impl Mainloop {
             ExitStatus::ExitedWith(code) => code,
             _ => self.shell.last_status(),
         };
+
+        // Store for prompt rendering
+        self.last_status = exit_code;
+        self.last_duration_ms = duration_ms;
 
         // Append to history with full context
         self.shell.history_mut().append(self.input.as_str(), exit_code, duration_ms);

@@ -1,17 +1,30 @@
-username_span    = { "\\{username}" }
-hostname_span    = { "\\{hostname}" }
-current_dir_span = { "\\{current_dir}" }
-repo_status_span = { "\\{repo_status}" }
-reset_span       = { "\\{reset}" }
-bold_span        = { "\\{bold}" }
-underline_span   = { "\\{underline}" }
-red_span         = { "\\{red}" }
-blue_span        = { "\\{blue}" }
-green_span       = { "\\{green}" }
-yellow_span      = { "\\{yellow}" }
-cyan_span        = { "\\{cyan}" }
-magenta_span     = { "\\{magenta}" }
-newline_span     = { "\\n" }
+username_span     = { "\\{username}" }
+hostname_span     = { "\\{hostname}" }
+current_dir_span  = { "\\{current_dir}" }
+repo_status_span  = { "\\{repo_status}" }
+reset_span        = { "\\{reset}" }
+bold_span         = { "\\{bold}" }
+underline_span    = { "\\{underline}" }
+red_span          = { "\\{red}" }
+blue_span         = { "\\{blue}" }
+green_span        = { "\\{green}" }
+yellow_span       = { "\\{yellow}" }
+cyan_span         = { "\\{cyan}" }
+magenta_span      = { "\\{magenta}" }
+newline_span      = { "\\n" }
+
+// New spans for enhanced prompt
+last_status_span  = { "\\{last_status}" }
+last_duration_span = { "\\{last_duration}" }
+time_span         = { "\\{time}" }
+date_span         = { "\\{date}" }
+git_branch_span   = { "\\{git_branch}" }
+git_status_span   = { "\\{git_status}" }
+load_span         = { "\\{load}" }
+env_var_span      = { "\\{env:" ~ var_name ~ "}" }
+
+var_name = @{ ASCII_ALPHANUMERIC+ | "_" }
+var_name_with_underscore = ${ var_name+ }
 
 condition = {
     "in_repo" | "in_remote"
@@ -33,6 +46,15 @@ special_span = _{
     | yellow_span
     | cyan_span
     | magenta_span
+    // New spans
+    | last_status_span
+    | last_duration_span
+    | time_span
+    | date_span
+    | git_branch_span
+    | git_status_span
+    | load_span
+    | env_var_span
     | if_span
 }
 
