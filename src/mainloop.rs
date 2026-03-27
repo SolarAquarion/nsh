@@ -24,7 +24,7 @@ use std::io::Write;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 const NONE: KeyModifiers = KeyModifiers::NONE;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 const ALT: KeyModifiers = KeyModifiers::ALT;
@@ -759,11 +759,24 @@ impl Mainloop {
 
         print!("\r\n");
         disable_raw_mode().ok();
-        self.shell.run_str(self.input.as_str());
+        
+        // Track timing for enhanced history
+        let start = Instant::now();
+        let exit_status = self.shell.run_str(self.input.as_str());
+        let duration_ms = start.elapsed().as_millis() as u64;
+        
         enable_raw_mode().ok();
         check_background_jobs(&mut self.shell);
 
-        self.shell.history_mut().append(self.input.as_str());
+        // Extract exit code from ExitStatus
+        let exit_code = match exit_status {
+            ExitStatus::ExitedWith(code) => code,
+            _ => self.shell.last_status(),
+        };
+
+        // Append to history with full context
+        self.shell.history_mut().append(self.input.as_str(), exit_code, duration_ms);
+        
         self.input.clear();
         self.history_selector.reset();
         self.clear_above = 0;
