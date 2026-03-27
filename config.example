@@ -1,0 +1,95 @@
+# nsh Configuration Example
+# Place in ~/.config/nsh/nshrc
+
+# ============================================================================
+# Shell Options
+# ============================================================================
+
+# Directory stack
+setopt auto_pushd        # cd pushes to directory stack
+setopt pushd_ignore_dups # no duplicate dirs on stack
+
+# History
+setopt hist_ignore_dups  # don't save duplicate commands
+setopt hist_ignore_space # commands starting with space aren't saved
+
+# Completion
+setopt auto_cd           # cd by just typing directory name
+setopt auto_pushd        # auto pushd on cd
+
+# ============================================================================
+# Prompt Configuration
+# ============================================================================
+
+# Default prompt: user@host:dir $
+# PROMPT='\{cyan}\{bold}\{username}@\{hostname}\{reset}:\{current_dir} $ '
+
+# Git-aware prompt:
+# PROMPT='\{cyan}\{bold}\{username}\{reset}:\{current_dir}\{git_status} $ '
+
+# Full-featured prompt:
+# PROMPT='\{cyan}\{bold}\{username}@\{hostname}\{reset}:\{current_dir} \{git_branch}\{git_status}\n\{time} $ '
+
+# Right prompt (future):
+# RPROMPT='\{last_duration} [\{last_status}]'
+
+# ============================================================================
+# Aliases
+# ============================================================================
+
+alias ll='ls -la'
+alias la='ls -A'
+alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+
+# Git aliases
+alias g='git'
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+alias gd='git diff'
+
+# Safety aliases
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+alias mkdir='mkdir -p'
+
+# ============================================================================
+# Environment
+# ============================================================================
+
+export EDITOR=vim
+export VISUAL=vim
+export PAGER=less
+export LESS='-R'
+
+# ============================================================================
+# AI Integration (Phase 2)
+# ============================================================================
+
+# Enable AI features
+# ai enable
+
+# Provider: openai, anthropic, local
+# ai provider openai
+
+# Model selection
+# ai model gpt-4
+
+# API key (or set OPENAI_API_KEY env var)
+# ai api-key "sk-..."
+
+# ============================================================================
+# Plugins (Phase 3)
+# ============================================================================
+
+# plugin load git-enhancements
+# plugin load docker-completions
+# plugin load kubectl-completions
