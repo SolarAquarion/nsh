@@ -1,271 +1,254 @@
-# nsh Fork Roadmap
+# nsh Roadmap
 
-> A modern POSIX-compatible shell with AI integration, structured data, and IDE-like completions.
+> A modern shell with great defaults, an extension bridge, and no compromises.
 
 ## Vision
 
-Build on nsh's solid foundation to create a shell that:
-1. **Remains POSIX compatible** — existing scripts Just Work™
-2. **Adds modern features** — structured data, AI, context awareness
-3. **Prioritizes UX** — zero-config, fast, intuitive
+nsh is a **platform**, not a language. The shell provides the interactive experience (REPL, TUI, completions, history). The scripting language lives outside.
 
-## Phase 1: Polish (Low Risk)
+**Core principles:**
+1. **Great defaults** — install and immediately enjoy, no config needed
+2. **Optional replaceability** — every layer is swappable
+3. **Extending power** — call any tool, any language
+4. **Language-agnostic** — extensions don't depend on nsh's language
+5. **Cross-platform** — single Rust binary, runs on any OS
 
-### 1.1 Enhanced History
-**File:** `src/history.rs`
+**What nsh is NOT:**
+- Not a scripting language (delegate to bash, Python, Clojure)
+- Not POSIX-compatible (use bash when you need POSIX)
+- Not a plugin ecosystem (extensions are external processes)
 
-Current format: `timestamp\tcwd\tcommand\n`
+## Architecture
 
-Extended format: `timestamp\tcwd\tgit_branch\texit_status\tduration_ms\tcommand\n`
+```
+nsh (Rust binary, zero dependencies)
+    │
+    ├── Built-in language (basic: commands, pipes, variables, functions)
+    │
+    ├── Extension bridge (JSON over stdin/stdout)
+    │   ├── carapace → completions (1000+ commands)
+    │   ├── bash → POSIX scripts
+    │   ├── Python/xonsh → data processing
+    │   ├── babashka → Clojure scripting
+    │   ├── Deno/Node → npm ecosystem
+    │   └── any binary → custom tools
+    │
+    └── Replaceable layers
+        ├── Editing mode (readline, vi, vim, emacs, helix)
+        ├── Completions (carapace, bash fallback)
+        ├── History backend (SQLite)
+        └── Prompt (powerline, custom spans)
+```
 
-```rust
-struct HistoryEntry {
-    timestamp: u64,
-    cwd: PathBuf,
-    git_branch: Option<String>,
-    exit_status: i32,
-    duration_ms: u64,
-    command: String,
+## Phase 1: Foundation
+
+### 1.1 Enhanced History ✅ DONE
+SQLite-backed history with git branch, exit status, duration tracking.
+Branch: `feature/enhanced-history`
+
+### 1.2 Better Prompt ✅ DONE
+New spans: last_status, duration, git_branch, git_status, time, date, load, env.
+Branch: `feature/better-prompt`
+
+### 1.3 SQLite History ✅ DONE
+Replaced TSV with SQLite for indexed queries.
+Branch: `feature/sqlite-history`
+
+### 1.4 Carapace Completions
+Replace bash_server.rs with carapace as primary completer.
+- JSON protocol for structured completions
+- 1000+ commands out of the box
+- bash_server as fallback for unknown commands
+
+### 1.5 Deep Path Completion
+Murex-style deep completion: type `nsh` → finds `~/nsh/src/main.rs`.
+- Full directory tree search (not just next level)
+- Fuzzy matching across path components
+- SQLite index for speed (like file index)
+- Respect .gitignore by default, Alt+A to show all
+
+## Phase 2: Interactive Experience
+
+### 2.1 Editing Modes
+Swappable editing layers, each complete and self-contained:
+
+| Mode | Description |
+|------|-------------|
+| **readline** | Default. Ctrl+A/E/K/Y/W/U, Meta+B/F |
+| **vi** | Classical. hjkl, i/Esc, basic motions |
+| **vim** | Full. text objects, macros, registers, visual |
+| **emacs** | C-x prefix, minibuffer, region highlighting |
+| **helix** | Selection-first, multiple cursors |
+
+### 2.2 Hint Text
+Murex-style contextual help below the prompt:
+```
+~/projects $ cat
+/usr/bin/cat - concatenate files and print on the standard output
+```
+- Show command path + description from `whatis`/man pages
+- Cached in SQLite for speed
+- Update live as you type
+
+### 2.3 Syntax Highlighting
+Real-time highlighting as you type:
+- Commands in green
+- Flags in yellow
+- Strings in cyan
+- Errors in red (underlined)
+- Paths in blue
+
+### 2.4 Autosuggestions
+Fish-style inline suggestions from history:
+- Ghost text shows last matching command
+- Ctrl+F or → to accept
+- Weighted by recency and frequency
+
+### 2.5 Safer Pasting
+Murex-style paste safety:
+- Multi-line paste shows warning prompt
+- Option to preview contents before executing
+- Protects against clipboard injection attacks
+
+## Phase 3: Extension Bridge
+
+### 3.1 JSON Protocol
+Extensions communicate via JSON over stdin/stdout:
+```json
+// Request
+{"command": "kubectl", "words": ["kubectl", "get", "pods"], "current_word": 3}
+
+// Response
+{"completions": [{"text": "pod-1", "kind": "pod"}]}
+```
+
+### 3.2 Extension Registry
+`~/.config/nsh/extensions.json`:
+```json
+{
+  "completions": {
+    "carapace": {"command": "carapace", "priority": 1},
+    "bash": {"command": "bash-completion", "priority": 2}
+  },
+  "scripts": {
+    "python": {"command": "python3", "extensions": [".py"]},
+    "clojure": {"command": "babashka", "extensions": [".clj"]}
+  }
 }
 ```
 
-**Benefits:**
-- Search history by git branch
-- Filter by exit status (failed commands)
-- Analyze command duration patterns
+### 3.3 Typed Pipes (Optional)
+Murex-inspired dual-channel pipelines:
+- `|` — byte channel (text, traditional)
+- `->` — value channel (structured data, when available)
+- Commands can opt-in to structured output
+- Graceful fallback to text when structured isn't available
 
-**Difficulty:** Easy (local changes only)
+## Phase 4: File Index
 
----
+### 4.1 Background Indexer
+Lightweight file index (like Baloo but simpler):
+```sql
+CREATE TABLE file_index (
+    path TEXT PRIMARY KEY,
+    name TEXT,
+    mtime INTEGER,
+    atime INTEGER,
+    depth INTEGER
+);
+```
+- Updated on cd, ls, file operations
+- Respects .gitignore by default
+- Used for deep path completion
+- Frecency ranking (recent + frequent paths)
 
-### 1.2 Better Prompt
-**File:** `src/prompt.rs`, `src/prompt.pest`
+### 4.2 Smart Filtering
+- Default: skip .git/, target/, node_modules/, __pycache__/
+- Shift+Tab: show all results including ignored files
+- `find:` prefix: explicit search across everything
 
-Add prompt functions:
-- `\{last_status}` — exit status of last command
-- `\{duration}` — duration of last command
-- `\{git_branch}` — current git branch (extract from repo_status)
-- `\{git_status}` — clean/dirty indicator
-- `\{time}` — current time
-- `\{load}` — system load average
-- `\{env:VAR}` — environment variable
+## Phase 5: Polish
 
-Custom prompt functions via config:
-```rust
-// In ~/.config/nsh/nshrc
-prompt_function "kube" { kubectl config current-context }
+### 5.1 Better Error Messages
+Murex-style contextual errors:
+```
+nsh: command not found: gti
+    Did you mean: git?
+    
+nsh: permission denied: /etc/shadow
+    Try: sudo cat /etc/shadow
 ```
 
-**Difficulty:** Easy
+### 5.2 Command Preview
+F9 previews command output while typing:
+- Safe commands auto-execute (cat, grep, jq)
+- Unsafe commands require confirmation (rm, mv)
+- Cache per-command, re-run from changed parameter
 
----
-
-### 1.3 Native Completion Engine
-**File:** Replace `src/bash_server.rs`
-
-Current: Spawns bash subprocess for completions
-
-Goal: Native Rust completion engine
-
-Approach:
-1. Parse completion specs (similar to bash `complete`)
-2. Support file, directory, command, host completions natively
-3. Allow external completion providers (via stdin/stdout protocol)
-4. Keep bash completion as fallback
-
-```rust
-struct CompletionSpec {
-    command: String,
-    completions: CompletionType,
-}
-
-enum CompletionType {
-    Files { pattern: Option<String> },
-    Directory,
-    Commands,
-    Hosts,
-    Users,
-    Custom { command: String },  // external provider
-}
-```
-
-**Difficulty:** Medium
-
----
-
-## Phase 2: Innovation (Medium Risk)
-
-### 2.1 AI Integration
-**New File:** `src/ai.rs`
-
-Features:
-- **Inline suggestions** — ghost text for likely next command
-- **Command explanation** — `?? <command>` explains what it does
-- **Error diagnosis** — when command fails, suggest fix
-- **Natural language** — `nsh: find large files over 100MB`
-
-```rust
-struct AIConfig {
-    enabled: bool,
-    provider: AIProvider,  // openai, anthropic, local
-    api_key: Option<String>,
-    model: String,
-    max_suggestions: usize,
-}
-
-impl AI {
-    fn suggest_next(&self, context: &ShellContext) -> Option<String>;
-    fn explain(&self, command: &str) -> String;
-    fn diagnose_error(&self, cmd: &str, error: &str) -> Option<String>;
-    fn natural_language(&self, query: &str) -> Option<String>;
-}
-```
-
-**Difficulty:** Medium (API integration is straightforward, UX is the challenge)
-
----
-
-### 2.2 Structured Data (Opt-in)
-**New File:** `src/structured.rs`
-
-Approach: Commands can opt-in to structured output via special variable or prefix.
-
-```sh
-# Structured output mode
-$ export NSH_STRUCTURED=1
-$ ls --json | where size > 1MB | sort-by modified
-```
-
-Or via pipe operator:
-```sh
-$ ls |> structured |> where size > 1MB
-```
-
-Internal representation:
-```rust
-enum Value {
-    String(String),
-    Number(f64),
-    Bool(bool),
-    Array(Vec<Value>),
-    Object(HashMap<String, Value>),
-    Null,
-}
-
-struct Table {
-    columns: Vec<String>,
-    rows: Vec<Vec<Value>>,
-}
-```
-
-**Difficulty:** Hard (requires type system, parsing, and careful POSIX compatibility)
-
----
-
-### 2.3 Plugin System
-**New File:** `src/plugin.rs`
-
-Approach: WebAssembly-based plugins for safety and portability.
-
-```rust
-trait Plugin {
-    fn name(&self) -> &str;
-    fn completions(&self, context: &CompletionContext) -> Vec<String>;
-    fn hooks(&self) -> Vec<Hook>;
-}
-
-enum Hook {
-    BeforeCommand(Box<dyn Fn(&str)>),
-    AfterCommand(Box<dyn Fn(&str, i32)>),
-    Prompt(Box<dyn Fn() -> String>),
-}
-```
-
-Plugin directory: `~/.config/nsh/plugins/`
-
-**Difficulty:** Medium
-
----
-
-## Phase 3: Revolution (High Risk)
-
-### 3.1 IDE-like Completions
-
-- **Type-aware completions** — know that `git checkout` expects branch names
-- **Context-aware suggestions** — suggest based on directory contents
-- **Semantic highlighting** — different colors for different token types
-- **Inline documentation** — show help in completion menu
-
-**Difficulty:** Hard
-
----
-
-### 3.2 Semantic Understanding
-
-- Parse command output into structured data when possible
-- Remember command relationships (`make` → `Makefile`)
-- Suggest next commands based on workflow patterns
-
-**Difficulty:** Very Hard
-
----
+### 5.3 Cross-Platform Polish
+- macOS: proper PATH handling, homebrew integration
+- Windows: WSL support, PowerShell fallback for Windows commands
+- FreeBSD/OpenBSD: job control, signal handling
 
 ## Configuration
 
-Config file: `~/.config/nsh/nshrc`
+Minimal config file: `~/.config/nsh/nshrc`
 
 ```sh
-# Example nshrc
-setopt auto_pushd
-setopt pushd_ignore_dups
+# Editing mode
+set edit-mode readline  # or vi, vim, emacs, helix
 
 # Prompt
-PROMPT='\{cyan}\{bold}\{username}@\{hostname}\{reset}:\{current_dir}\{git_status} $ '
+set prompt powerline
 
-# AI integration
-ai enable
-ai provider openai
-ai model gpt-4
+# History
+set history-size 10000
 
-# Plugins
-plugin load git-enhancements
-plugin load docker-completions
+# Extensions
+extension carapace
+extension bash-fallback
+
+# Hint text
+set hint-text on
 ```
 
----
+No plugins to install. No conflicts to resolve. Just settings.
 
-## Architecture Extensions
+## File Organization
 
 ```
 src/
-├── ai.rs              # NEW: AI integration
-├── structured.rs      # NEW: Structured data types
-├── plugin.rs          # NEW: Plugin system
-├── completion.rs      # NEW: Native completion engine
-├── config.rs          # NEW: Config file parsing
-├── history.rs         # EXTENDED: Enhanced history
-├── prompt.rs          # EXTENDED: More prompt functions
-├── mainloop.rs        # EXTENDED: AI suggestions UI
-└── ...existing...
+├── main.rs              # Entry point
+├── mainloop.rs          # Event loop, TUI, input handling
+├── shell.rs             # Shell state (env, aliases, history, jobs)
+├── eval.rs              # Command evaluation
+├── parser.rs            # Shell grammar (PEG)
+├── history.rs           # History storage (SQLite)
+├── history_search.rs    # History search and filtering
+├── prompt.rs            # Prompt rendering and spans
+├── completion.rs        # Completion engine (TODO)
+├── carapace_server.rs   # Carapace integration (TODO)
+├── bash_server.rs       # Bash completion fallback
+├── expand.rs            # Variable/command expansion
+├── highlight.rs         # Syntax highlighting
+├── process.rs           # Process management
+├── file_index.rs        # Background file indexer (TODO)
+├── edit_mode.rs         # Editing mode trait (TODO)
+├── edit_readline.rs     # Readline editing (TODO)
+├── edit_vi.rs           # Vi editing (TODO)
+├── edit_vim.rs          # Vim editing (TODO)
+├── edit_emacs.rs        # Emacs editing (TODO)
+├── edit_helix.rs        # Helix editing (TODO)
+└── extension.rs         # Extension bridge protocol (TODO)
 ```
-
----
-
-## Contributing Back
-
-Features that don't break POSIX compatibility will be upstreamed to nuta/nsh:
-- Enhanced history (configurable format)
-- Better prompt functions
-- Native completion engine
-
----
 
 ## Milestones
 
-- [x] **v0.5.0** — Enhanced history (git branch, exit status, duration) ✅ DONE
-- [x] **v0.5.1** — Better prompt (new spans: last_status, duration, git_branch, git_status) ✅ DONE
-- [x] **v0.5.2** — SQLite-backed history with indexed queries ✅ DONE
-- [ ] **v0.6.0** — Native completion engine
-- [ ] **v0.7.0** — AI integration
-- [ ] **v0.8.0** — Structured data (opt-in)
-- [ ] **v1.0.0** — Plugin system, stable API
+- [x] **v0.5.0** — Enhanced history (git branch, exit status, duration)
+- [x] **v0.5.1** — Better prompt (new spans)
+- [x] **v0.5.2** — SQLite history backend
+- [ ] **v0.6.0** — Carapace completions + deep path completion
+- [ ] **v0.7.0** — Editing modes (readline, vi, vim)
+- [ ] **v0.8.0** — Hint text + syntax highlighting + autosuggestions
+- [ ] **v0.9.0** — Extension bridge (JSON protocol)
+- [ ] **v1.0.0** — Stable API, cross-platform, login shell support
