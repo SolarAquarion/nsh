@@ -146,6 +146,15 @@ Each mode is a complete, self-contained editing experience:
 - **Preview completions** — F1 shows man pages, file contents, images
 - **Preview command lines** — F9 runs pipeline and shows output while typing
 - **Safer pasting** — warning on multi-line paste
+- **Deep path completion** — find `nsh` and it matches `~/nsh/src/main.rs`, not just next level
+- **Smart autocompletion by pipe type** — `->` suggests methods that accept the previous command's output type
+- **Inline spellchecker** — underlines errors as you type
+- **JSON-schema completions** — define completion rules as JSON, not scripts
+- **AllowSubstring matching** — `da` matches `Monday`, `Tuesday` (substring, not prefix)
+- **AutoBranch** — completion automatically traverses directory branches
+- **Dynamic completions with caching** — completions can be computed dynamically with configurable TTL
+- **Smarter error messages** — detailed, contextual errors instead of cryptic failures
+- **Custom readline library** — Murex wrote their own readline instead of using the system one
 
 ### From Oh
 - **First-class channels** — pipes as values you can store and pass
