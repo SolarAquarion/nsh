@@ -21,17 +21,35 @@ setopt auto_pushd        # auto pushd on cd
 # Prompt Configuration
 # ============================================================================
 
+# Available spans:
+#   {username}    - current username
+#   {hostname}    - hostname
+#   {current_dir} - current working directory (with ~ substitution)
+#   {repo_status} - git branch + status + action (rebase/merge/bisect)
+#   {git_branch}  - just the git branch name
+#   {git_status}  - * if repo has uncommitted changes
+#   {last_status} - exit status of last command (red if non-zero)
+#   {last_duration} - duration of last command
+#   {time}        - current time HH:MM:SS
+#   {date}        - current date YYYY-MM-DD
+#   {load}        - system load average
+#   {env:VAR}     - environment variable value
+#   Colors: {red}, {green}, {yellow}, {blue}, {cyan}, {magenta}
+#   Styles: {bold}, {underline}, {reset}
+#   Control: \n for newline
+#   Conditionals: \if{in_repo}{...}{} or \if{in_remote}{...}{}
+
 # Default prompt: user@host:dir $
 # PROMPT='\{cyan}\{bold}\{username}@\{hostname}\{reset}:\{current_dir} $ '
 
 # Git-aware prompt:
-# PROMPT='\{cyan}\{bold}\{username}\{reset}:\{current_dir}\{git_status} $ '
+# PROMPT='\{cyan}\{bold}\{username}\{reset}:\{current_dir} \{git_branch}\{git_status} $ '
 
-# Full-featured prompt:
-# PROMPT='\{cyan}\{bold}\{username}@\{hostname}\{reset}:\{current_dir} \{git_branch}\{git_status}\n\{time} $ '
+# Full-featured prompt with timing:
+# PROMPT='\{cyan}\{current_dir}\{reset} \{git_branch}\{git_status}\n\{time} [\{last_duration}] $ '
 
-# Right prompt (future):
-# RPROMPT='\{last_duration} [\{last_status}]'
+# Show exit status:
+# PROMPT='[\{last_status}] \{cyan}\{current_dir}\{reset} $ '
 
 # ============================================================================
 # Aliases

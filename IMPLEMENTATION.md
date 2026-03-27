@@ -6,6 +6,24 @@ Commit: `e3c9abab` - Branch: `feature/enhanced-history`
 
 ### Completed Implementation
 
+## 2. Better Prompt ✅ DONE
+
+Commit: `3f781c6c` - Branch: `feature/better-prompt`
+
+### Completed Implementation
+
+### New Spans Available
+| Span | Description |
+|------|-------------|
+| `{last_status}` | Exit status (red if non-zero) |
+| `{last_duration}` | Duration (human readable) |
+| `{time}` | Current time HH:MM:SS |
+| `{date}` | Current date YYYY-MM-DD |
+| `{git_branch}` | Git branch name |
+| `{git_status}` | * if uncommitted changes |
+| `{load}` | System load average |
+| `{env:VAR}` | Environment variable |
+
 ### Current State
 ```rust
 // history.rs
