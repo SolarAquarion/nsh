@@ -159,9 +159,19 @@ enum Span {
 - Custom functions execute safely
 - Performance is acceptable (< 10ms prompt render)
 
+## 3. SQLite-Backed History ✅ DONE
+Commit: `d04df1ba` - Branch: `feature/sqlite-history`
+
+### Completed Implementation
+- Replaces TSV file with SQLite database
+- Automatic migration from old format
+- Indexed queries for branch, exit_status, duration, cwd
+- In-memory DB for tests
+- `rusqlite` dependency (bundled)
+
 ---
 
-## 3. Native Completion Engine
+## 4. Native Completion Engine
 
 ### Current State
 ```rust
