@@ -1,6 +1,6 @@
 # nsh Roadmap
 
-> A modern shell with great defaults, an extension bridge, and no compromises.
+> The best default shell.
 
 ## Vision
 
@@ -247,8 +247,14 @@ src/
 - [x] **v0.5.0** — Enhanced history (git branch, exit status, duration)
 - [x] **v0.5.1** — Better prompt (new spans)
 - [x] **v0.5.2** — SQLite history backend
-- [ ] **v0.6.0** — Carapace completions + deep path completion
-- [ ] **v0.7.0** — Editing modes (readline, vi, vim)
-- [ ] **v0.8.0** — Hint text + syntax highlighting + autosuggestions
-- [ ] **v0.9.0** — Extension bridge (JSON protocol)
-- [ ] **v1.0.0** — Stable API, cross-platform, login shell support
+- [ ] **v0.6.0** — Syntax highlighting + autosuggestions
+- [ ] **v0.7.0** — Carapace completions + deep path completion
+- [ ] **v0.8.0** — Hint text + safer pasting + better errors
+- [ ] **v0.9.0** — Typed pipes + file index
+- [ ] **v1.0.0** — The best default shell (login shell, stable API, cross-platform)
+
+**Post-1.0:**
+- [ ] **v1.1.0** — Extension bridge (JSON protocol)
+- [ ] **v1.2.0** — Editing modes (vi, vim, emacs, helix)
+- [ ] **v1.3.0** — Command preview (F9 live output)
+- [ ] **v1.4.0** — AI integration
